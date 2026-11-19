@@ -1,16 +1,16 @@
-# UglyBot for MicroBlocks
+# Triko for MicroBlocks
 
-Easy blocks for the **Myndsets UglyBot** two-wheel rover, built on an **ESP32**, a **TB6612FNG** motor driver and an **HC-SR04** ultrasonic sensor.
+Easy blocks for the **Myndsets Triko** two-wheel rover, built on an **ESP32**, a **TB6612FNG** motor driver and an **HC-SR04** ultrasonic sensor.
 
 ## Open it in one click
 
-**[Open UglyBot in MicroBlocks](https://microblocks.fun/run/microblocks.html#project=https://raw.githubusercontent.com/levidontackerman/uglybot-microblocks/main/UglyBot.ubp)**
+**[Open Triko in MicroBlocks](https://microblocks.fun/run/microblocks.html#project=https://raw.githubusercontent.com/levidontackerman/triko-microblocks/main/Triko.ubp)**
 
-The link opens MicroBlocks in Chrome or Edge with the UglyBot blocks already loaded. There's nothing to install. Plug in the ESP32 and click **Connect → connect (USB)**.
+The link opens MicroBlocks in Chrome or Edge with the Triko blocks already loaded. There's nothing to install. Plug in the ESP32 and click **Connect → connect (USB)**.
 
 ## Wiring (ESP32, GPIO numbers)
 
-This matches the current Myndsets *Two-Wheel Rover* pin map (PWMB and STBY moved in the last rewiring).
+This matches the current Myndsets *Two-Wheel Rover* pin map.
 
 | Part | Pin | GPIO |
 |---|---|---|
@@ -24,33 +24,53 @@ This matches the current Myndsets *Two-Wheel Rover* pin map (PWMB and STBY moved
 | Ultrasonic (HC-SR04) | TRIG | 22 |
 | | ECHO | 34, through the 1 kΩ / 2 kΩ divider |
 
-- **Power:** two 18650 cells in series feed an LM2596 buck module set to 5.0 V, which powers the driver's VM pin. All grounds are joined.
-- **STBY** is switched HIGH by the library the first time any UglyBot block runs. Until then the driver stays asleep and the motors are off.
-- **ECHO** is a 5 V signal. It must go through the divider before it reaches GPIO 34.
+- **Power:** two 18650 cells in series go to a two-cell charging module, then through the ON/OFF switch to an LM2596 step-down module set to 5.0 volts. That 5 volt rail powers the motor driver (VM), the ESP32 (VIN) and the ultrasonic sensor. All grounds are joined.
+- **STBY** is switched HIGH by the library the first time any Triko block runs. Until then the driver stays asleep and the motors are off.
+- **ECHO** is a 5 volt signal. It must go through the divider before it reaches GPIO 34.
 - MicroBlocks drives GPIO 25 and 26 as DAC outputs, so they can't do PWM. The library handles this for the left motor automatically: it holds PWMA (GPIO 25) HIGH and sends the left speed as PWM on AIN2 (GPIO 27).
 
 ## Blocks
 
-### Drive
+In the same order as the Triko palette.
+
+### Moving
 
 | Block | What it does |
 |---|---|
-| go [forward ▾] at speed 50 % | Keeps moving: forward, backward, turn left/right, spin left/right |
-| go [forward ▾] at speed 50 % for 1000 ms | Moves for a time, then brakes (1000 ms = 1 second) |
-| stop UglyBot | Brakes both wheels |
-| go straight at full speed | Both wheels forward at 100 %, until a stop block runs |
-| reverse at full speed | Both wheels backward at 100 % |
-| turn left at full speed | Right wheel at 100 %, left wheel braked |
-| turn right at full speed | Left wheel at 100 %, right wheel braked |
+| move [forward ▾] at speed 50 % for 1000 ms | Moves for a time, then brakes (1000 ms = 1 second) |
+| move [forward ▾] at speed 50 % | Keeps moving: forward, backward, turn left/right, spin left/right |
+| stop Triko | Brakes both wheels |
+
+### Full speed
+
+| Block | What it does |
+|---|---|
+| move forward at full speed | Both wheels forward at 100 %, until a stop block runs |
+| move backward at full speed | Both wheels backward at 100 % |
+| move left at full speed | Right wheel at 100 %, left wheel braked |
+| move right at full speed | Left wheel at 100 %, right wheel braked |
+
+### Wheels
+
+| Block | What it does |
+|---|---|
 | set left wheel 50 % right wheel 50 % | Each wheel -100 to 100 (negative = backward, 0 = brake) |
 | set [left ▾] wheel speed to 50 % | One wheel, or both |
-| stop UglyBot with [brake ▾] | Brake, or coast to a stop |
+| stop Triko with [brake ▾] | Brake, or coast to a stop |
+| set wheel balance left 100 % right 100 % | Lower the faster wheel if Triko drifts |
+
+### Ultrasonic
+
+| Block | What it does |
+|---|---|
+| Triko distance (cm) | Distance to the nearest thing in front. 400 means nothing in range |
+| obstacle closer than 15 cm | True or false, so it fits inside **if** and **when** blocks |
 
 ### Web joystick
 
 | Block | What it does |
 |---|---|
-| start web joystick WiFi name `UglyBot` password `12345678` | Turns UglyBot into a WiFi hotspot and serves a web page with a joystick and a STOP button |
+| start web joystick WiFi name `Triko` password `12345678` | Turns Triko into a WiFi hotspot and serves a web page with a joystick and a STOP button |
 
 How to use it:
 
@@ -59,27 +79,20 @@ How to use it:
 3. Open **http://192.168.4.1** in the phone's browser.
 4. Drag the stick to drive. Let go, or press **STOP**, to brake.
 
-If the phone stops talking to UglyBot for 1.5 seconds (out of range, screen locked), UglyBot stops by itself. In a class, give every robot its own WiFi name. Some phones warn that the WiFi has no internet; choose to stay connected.
-
-### Ultrasonic
-
-| Block | What it does |
-|---|---|
-| UglyBot distance (cm) | Distance to the nearest thing in front. 400 means nothing in range |
-| obstacle closer than 15 cm | True or false, so it fits inside **if** and **when** blocks |
+If the phone stops talking to Triko for 1.5 seconds (out of range, screen locked), Triko stops by itself. In a class, give every robot its own WiFi name.
 
 ### Setup
 
 | Block | What it does |
 |---|---|
 | flip [left ▾] wheel direction | Fixes a wheel that turns the wrong way |
-| set wheel balance left 100 % right 100 % | Lower the faster wheel if UglyBot drifts |
-| set UglyBot pins … standby … | Only for a robot wired differently. Use -1 for standby if STBY is wired straight to VCC |
-| set ultrasonic pins trig 22 echo 34 | Only for a robot wired differently |
+
+The pin setup blocks are hidden. They are only needed for a robot wired differently from the table above.
 
 ## Files
 
-- **UglyBot.ubp**: starter project with the library inside (this is what the link opens)
-- **UglyBot.ubl**: the library on its own (drag it into MicroBlocks, or use Add Library)
+- **Triko.ubp**: starter project with the library inside (this is what the link opens)
+- **Triko.ubl**: the library on its own (drag it into MicroBlocks, or use Add Library)
+- **Triko-ultrasonic-test.ubp**: shows the ultrasonic distance and lights the ESP32's blue LED when something is closer than 15 cm
 
 MIT License · Myndsets

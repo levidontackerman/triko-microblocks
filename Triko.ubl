@@ -1,0 +1,433 @@
+module Triko Output
+author 'Myndsets'
+version 2 0
+tags robot motor esp32 tb6612 triko wifi joystick ultrasonic
+choices triko_move forward backward 'turn left' 'turn right' 'spin left' 'spin right'
+choices triko_wheel left right both
+choices triko_stopmode brake coast
+description 'Easy blocks for the Myndsets Triko two-wheel rover (ESP32 + TB6612FNG motor driver + HC-SR04 ultrasonic sensor).
+
+Wiring (ESP32 GPIO numbers, Myndsets Two-Wheel Rover pin map):
+LEFT motor (A, AO1/AO2): PWMA 25, AIN1 26, AIN2 27
+RIGHT motor (B, BO1/BO2): PWMB 14, BIN1 18, BIN2 19
+STBY 13 (the library switches it HIGH to turn the driver on)
+Ultrasonic: TRIG 22, ECHO 34 through the 1 k / 2 k divider
+
+GPIO 25 and 26 have no PWM in MicroBlocks (they are DAC pins), so the left speed pin is held HIGH and the left wheel speed is sent on AIN2 (GPIO 27) instead. This is automatic.
+
+Speed is -100 to 100 %. Positive = forward, negative = backward, 0 = brake.
+If a wheel turns the wrong way, use "flip wheel direction".
+If Triko drifts, lower the faster wheel with "set wheel balance".
+The four "move ... at full speed" blocks keep moving until a stop block runs.
+
+Web joystick: "start web joystick" makes Triko a WiFi hotspot. Join that WiFi on a phone and open http://192.168.4.1 to get a joystick and a STOP button. The block keeps running, so put it last in a script (for example under "when started"). If the phone stops talking to Triko for 1.5 seconds, Triko stops.
+
+Ultrasonic: "Triko distance (cm)" reports the distance to the nearest thing in front (400 = nothing in range). "obstacle closer than" is true or false, so it fits in "if" and "when" blocks.
+'
+variables _triko_ready _triko_pwmL _triko_in1L _triko_in2L _triko_pwmR _triko_in1R _triko_in2R _triko_stby _triko_flipL _triko_flipR _triko_balL _triko_balR _triko_trig _triko_echo _triko_sonarLast _triko_sonarMisses _triko_sonarTime _triko_webMoving _triko_webTime
+
+  spec ' ' 'triko_goFor' 'move _ at speed _ % for _ ms' 'menu.triko_move num num' 'forward' 50 1000
+  spec ' ' 'triko_go' 'move _ at speed _ %' 'menu.triko_move num' 'forward' 50
+  spec ' ' 'triko_stop' 'stop Triko'
+  space
+  spec ' ' 'triko_straightFull' 'move forward at full speed'
+  spec ' ' 'triko_reverseFull' 'move backward at full speed'
+  spec ' ' 'triko_leftFull' 'move left at full speed'
+  spec ' ' 'triko_rightFull' 'move right at full speed'
+  space
+  spec ' ' 'triko_setWheels' 'set left wheel _ % right wheel _ %' 'num num' 50 50
+  spec ' ' 'triko_setWheel' 'set _ wheel speed to _ %' 'menu.triko_wheel num' 'left' 50
+  spec ' ' 'triko_stopWith' 'stop Triko with _' 'menu.triko_stopmode' 'brake'
+  spec ' ' 'triko_setBalance' 'set wheel balance left _ % right _ %' 'num num' 100 100
+  space
+  spec 'r' 'triko_distance' 'Triko distance (cm)'
+  spec 'r' 'triko_obstacle' 'obstacle closer than _ cm' 'num' 15
+  space
+  spec ' ' 'triko_webJoystick' 'start web joystick WiFi name _ password _' 'str str' 'Triko' '12345678'
+  space
+  spec ' ' 'triko_flipWheel' 'flip _ wheel direction _' 'menu.triko_wheel bool' 'left' true
+  space
+  spec ' ' '_triko_setPins' 'set Triko pins left PWM _ IN1 _ IN2 _ right PWM _ IN1 _ IN2 _ standby _' 'num num num num num num num' 25 26 27 14 18 19 13
+  spec ' ' '_triko_setSonarPins' 'set ultrasonic pins trig _ echo _' 'num num' 22 34
+  spec ' ' '_triko_init' '_triko_init'
+  spec ' ' '_triko_wake' '_triko_wake'
+  spec ' ' '_triko_drive' '_triko_drive pwm _ in1 _ in2 _ speed _ balance _ flip _' 'num num num num num bool' 25 26 27 0 100 false
+  spec 'r' '_triko_pwmOK' '_triko_pwmOK _' 'num' 27
+  spec ' ' '_triko_inPin' '_triko_inPin _ level _' 'num num' 27 0
+  spec ' ' '_triko_coast' '_triko_coast pwm _ in1 _ in2 _' 'num num num' 25 26 27
+  spec ' ' '_triko_left' '_triko_left _' 'num' 0
+  spec ' ' '_triko_right' '_triko_right _' 'num' 0
+  spec ' ' '_triko_coastAll' '_triko_coastAll'
+  spec 'r' '_triko_sonarPulse' '_triko_sonarPulse'
+  spec ' ' '_triko_webHandle' '_triko_webHandle _' 'str' ''
+  spec ' ' '_triko_webDrive' '_triko_webDrive _' 'str' '/d/200/200'
+  spec 'r' '_triko_page' '_triko_page'
+  spec 'r' '_triko_page1' '_triko_page1'
+  spec 'r' '_triko_page2' '_triko_page2'
+  spec 'r' '_triko_page3' '_triko_page3'
+  spec 'r' '_triko_page4' '_triko_page4'
+
+to '_triko_coast' pwm in1 in2 {
+  comment 'IN1 = IN2 = LOW: the motor free-wheels.'
+  if ('_triko_pwmOK' pwm) {
+    digitalWriteOp in1 false
+    digitalWriteOp in2 false
+  } else {
+    '_triko_inPin' in1 0
+    '_triko_inPin' in2 0
+  }
+}
+
+to '_triko_coastAll' {
+  '_triko_coast' _triko_pwmL _triko_in1L _triko_in2L
+  '_triko_coast' _triko_pwmR _triko_in1R _triko_in2R
+}
+
+to '_triko_drive' pwm in1 in2 speed balance flip {
+  comment 'One TB6612 channel. speed -100..100, 0 = brake.'
+  speed = (maximum -100 (minimum 100 speed))
+  if flip {
+    speed = (0 - speed)
+  }
+  local 'duty' ((((absoluteValue speed) * balance) * 1023) / 10000)
+  if ('_triko_pwmOK' pwm) {
+    comment 'Normal: direction on IN1/IN2, PWM on the PWM pin.'
+    if (duty < 1) {
+      digitalWriteOp in1 true
+      digitalWriteOp in2 true
+      analogWriteOp pwm 0
+    } (speed > 0) {
+      digitalWriteOp in1 true
+      digitalWriteOp in2 false
+      analogWriteOp pwm duty
+    } else {
+      digitalWriteOp in1 false
+      digitalWriteOp in2 true
+      analogWriteOp pwm duty
+    }
+  } else {
+    comment 'PWM pin is GPIO 25/26 (no PWM): hold it HIGH, PWM an IN pin.'
+    digitalWriteOp pwm true
+    if (duty < 1) {
+      '_triko_inPin' in1 1023
+      '_triko_inPin' in2 1023
+    } (speed > 0) {
+      if ('_triko_pwmOK' in2) {
+        '_triko_inPin' in1 1023
+        '_triko_inPin' in2 (1023 - duty)
+      } else {
+        '_triko_inPin' in2 0
+        '_triko_inPin' in1 duty
+      }
+    } else {
+      if ('_triko_pwmOK' in1) {
+        '_triko_inPin' in2 1023
+        '_triko_inPin' in1 (1023 - duty)
+      } else {
+        '_triko_inPin' in1 0
+        '_triko_inPin' in2 duty
+      }
+    }
+  }
+}
+
+to '_triko_inPin' pin level {
+  comment 'Used when the PWM pin is a DAC pin. level 0-1023. PWM-capable pins get PWM; GPIO 25/26 get plain HIGH/LOW.'
+  if ('_triko_pwmOK' pin) {
+    analogWriteOp pin level
+  } else {
+    digitalWriteOp pin (level > 511)
+  }
+}
+
+to '_triko_init' {
+  comment 'Default pins from the Myndsets Two-Wheel Rover (ESP32) pin map.'
+  if (_triko_ready == 0) {
+    _triko_pwmL = 25
+    _triko_in1L = 26
+    _triko_in2L = 27
+    _triko_pwmR = 14
+    _triko_in1R = 18
+    _triko_in2R = 19
+    _triko_stby = 13
+    _triko_trig = 22
+    _triko_echo = 34
+    _triko_flipL = false
+    _triko_flipR = false
+    _triko_balL = 100
+    _triko_balR = 100
+    _triko_sonarLast = 400
+    _triko_ready = 1
+    '_triko_coastAll'
+    '_triko_wake'
+  }
+}
+
+to '_triko_left' speed {
+  '_triko_drive' _triko_pwmL _triko_in1L _triko_in2L speed _triko_balL _triko_flipL
+}
+
+to '_triko_page' {
+  comment 'The joystick web page. It is stored in pieces because one MicroBlocks script can only hold about 1000 bytes.'
+  return ('[data:join]' ('[data:join]' ('_triko_page1') ('_triko_page2')) ('[data:join]' ('_triko_page3') ('_triko_page4')))
+}
+
+to '_triko_page1' {
+  return '<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"><title>Triko</title><style>body{margin:0;background:#12151c;color:#fff;font-family:sans-serif;text-align:center;touch-action:none;user-select:none;-webkit-user-select:none}h2{margin:14px 0 2px}#t{color:#9aa7bd}#p{width:260px;height:260px;margin:16px auto;border-radius:50%;background:#232a38;border:3px solid #3d4a63;position:relative}#k{width:96px;height:96px;border-radius:50%;background:#ffb300;position:absolute;left:82px;top:82px}#b{width:240px;padding:22px 0;font-size:30px;font-weight:bold;'
+}
+
+to '_triko_page2' {
+  return 'color:#fff;background:#e53935;border:0;border-radius:16px}</style></head><body><h2>Triko</h2><div id="t">drag the stick to drive</div><div id="p"><div id="k"></div></div><button id="b">STOP</button><script>var p=document.getElementById("p"),k=document.getElementById("k"),t=document.getElementById("t"),L=0,R=0,sent="",busy=0,down=0,last=0;function put(x,y){k.style.left=(82+x*85)+"px";k.style.top=(82-y*85)+"px"}function mv(e){if(!down)return;var r=p.getBoundingClientRect(),x=(e.clientX-r.left-130)/85,y=(130-e.clientY+r.top)/85,m=Math.sqrt(x*x+y*y);if(m>1){x/=m;y/=m}put(x,y);if(Math.abs(x)<.15)x=0;'
+}
+
+to '_triko_page3' {
+  return 'if(Math.abs(y)<.15)y=0;var l=y+x,q=y-x,s=Math.max(1,Math.abs(l),Math.abs(q));L=Math.round(l/s*100);R=Math.round(q/s*100)}function up(){down=0;L=0;R=0;put(0,0)}p.onpointerdown=function(e){down=1;p.setPointerCapture(e.pointerId);mv(e)};p.onpointermove=mv;p.onpointerup=up;p.onpointercancel=up;document.getElementById("b").onclick=function(){up();sent=""};function tick(){var u="/d/"+(L+200)+"/"+(R+200),n=Date.now();if(busy&&n-last<1500)return;if(u==sent&&(n-last<400||!(L||R)))return;busy=1;sent=u;last=n;fetch(u).then(function(){busy=0;t.textContent="connected"},function(){busy=0;sent="";'
+}
+
+to '_triko_page4' {
+  return 't.textContent="no link - join the Triko WiFi"})}setInterval(tick,80)</script></body></html>'
+}
+
+to '_triko_pwmOK' pin {
+  comment 'false for GPIO 25 and 26: MicroBlocks drives them as DAC outputs, not PWM.'
+  return (not (or (pin == 25) (pin == 26)))
+}
+
+to '_triko_right' speed {
+  '_triko_drive' _triko_pwmR _triko_in1R _triko_in2R speed _triko_balR _triko_flipR
+}
+
+to '_triko_sonarPulse' {
+  comment 'Send a 50 usec pulse on TRIG, then capture the echo pulse. Same method as the MicroBlocks HC-SR04 library.'
+  digitalWriteOp _triko_trig false
+  waitMicros 2
+  digitalWriteOp _triko_trig true
+  waitMicros 50
+  digitalWriteOp _triko_trig false
+  '[sensors:captureStart]' _triko_echo
+  local 'start' (millisOp)
+  repeatUntil (or (('[sensors:captureCount]') >= 2) ((absoluteValue ((millisOp) - start)) > 24)) {
+    waitMillis 1
+  }
+  return ('[sensors:captureEnd]')
+}
+
+to '_triko_wake' {
+  comment 'STBY HIGH switches the TB6612FNG on. Use -1 if STBY is wired straight to VCC.'
+  if (_triko_stby >= 0) {
+    digitalWriteOp _triko_stby true
+  }
+}
+
+to '_triko_webDrive' path {
+  comment 'path is /d/LEFT/RIGHT. Each speed arrives as 100-300 (200 = stopped), so a broken message is ignored.'
+  local 'k' ('[data:find]' '/' path 4)
+  if (k < 5) {
+    return 0
+  }
+  local 'left' (('[data:copyFromTo]' path 4 (k - 1)) + 0)
+  local 'right' (('[data:copyFromTo]' path (k + 1) (size path)) + 0)
+  if (or (or (left < 100) (left > 300)) (or (right < 100) (right > 300))) {
+    return 0
+  }
+  '_triko_left' (left - 200)
+  '_triko_right' (right - 200)
+  _triko_webMoving = (or (left != 200) (right != 200))
+  _triko_webTime = (millisOp)
+}
+
+to '_triko_webHandle' request {
+  comment '/ is the joystick page, /d/... is a drive message.'
+  local 'more' request
+  repeatUntil (or (not (isType more 'string')) ((size more) < 800)) {
+    more = ('[net:httpServerGetRequest]')
+  }
+  local 'i' ('[data:find]' ' ' request)
+  local 'j' ('[data:find]' ' HTTP' request)
+  if (or (i < 1) (j <= (i + 1))) {
+    '[net:respondToHttpRequest]' '400 Bad Request'
+    return 0
+  }
+  local 'path' ('[data:copyFromTo]' request (i + 1) (j - 1))
+  if (('[data:find]' '/d/' path) == 1) {
+    '_triko_webDrive' path
+    '[net:respondToHttpRequest]' '200 OK' 'ok'
+  } (path == '/') {
+    '[net:respondToHttpRequest]' '200 OK' ('_triko_page') 'Content-Type: text/html'
+  } else {
+    '[net:respondToHttpRequest]' '404 Not Found'
+  }
+}
+
+to triko_distance {
+  comment 'Distance in cm from the HC-SR04. 400 = nothing in range.'
+  '_triko_init'
+  if ((absoluteValue ((millisOp) - _triko_sonarTime)) < 30) {
+    comment 'The sensor needs a short rest between pings, so reuse the last reading.'
+    return _triko_sonarLast
+  }
+  local 'pulses' ('_triko_sonarPulse')
+  _triko_sonarTime = (millisOp)
+  if (and ((size pulses) >= 2) ((at 2 pulses) > 0)) {
+    _triko_sonarMisses = 0
+    _triko_sonarLast = ((10 * (at 2 pulses)) / 583)
+  } else {
+    comment 'No echo. Keep the last reading for a few misses, then report 400 (out of range).'
+    _triko_sonarMisses += 1
+    if (_triko_sonarMisses >= 10) {
+      _triko_sonarLast = 400
+    }
+  }
+  return _triko_sonarLast
+}
+
+to triko_flipWheel wheel on {
+  '_triko_init'
+  if (or (wheel == 'left') (wheel == 'both')) {
+    _triko_flipL = on
+  }
+  if (or (wheel == 'right') (wheel == 'both')) {
+    _triko_flipR = on
+  }
+}
+
+to triko_go move speed {
+  '_triko_init'
+  local 's' (minimum 100 (absoluteValue speed))
+  if (move == 'forward') {
+    '_triko_left' s
+    '_triko_right' s
+  } (move == 'backward') {
+    '_triko_left' (0 - s)
+    '_triko_right' (0 - s)
+  } (move == 'turn left') {
+    '_triko_left' 0
+    '_triko_right' s
+  } (move == 'turn right') {
+    '_triko_left' s
+    '_triko_right' 0
+  } (move == 'spin left') {
+    '_triko_left' (0 - s)
+    '_triko_right' s
+  } (move == 'spin right') {
+    '_triko_left' s
+    '_triko_right' (0 - s)
+  }
+}
+
+to triko_goFor move speed ms {
+  triko_go move speed
+  waitMillis (maximum 0 ms)
+  triko_stop
+}
+
+to triko_obstacle cm {
+  local 'd' (triko_distance)
+  return (and (d > 0) (d < cm))
+}
+
+to triko_leftFull {
+  triko_go 'turn left' 100
+}
+
+to triko_reverseFull {
+  triko_go 'backward' 100
+}
+
+to triko_rightFull {
+  triko_go 'turn right' 100
+}
+
+to triko_setBalance left right {
+  '_triko_init'
+  _triko_balL = (maximum 0 (minimum 100 left))
+  _triko_balR = (maximum 0 (minimum 100 right))
+}
+
+to '_triko_setPins' pwmL in1L in2L pwmR in1R in2R stby {
+  '_triko_init'
+  _triko_pwmL = pwmL
+  _triko_in1L = in1L
+  _triko_in2L = in2L
+  _triko_pwmR = pwmR
+  _triko_in1R = in1R
+  _triko_in2R = in2R
+  _triko_stby = stby
+  '_triko_coastAll'
+  '_triko_wake'
+}
+
+to '_triko_setSonarPins' trig echo {
+  '_triko_init'
+  _triko_trig = trig
+  _triko_echo = echo
+}
+
+to triko_setWheel wheel speed {
+  '_triko_init'
+  if (or (wheel == 'left') (wheel == 'both')) {
+    '_triko_left' speed
+  }
+  if (or (wheel == 'right') (wheel == 'both')) {
+    '_triko_right' speed
+  }
+}
+
+to triko_setWheels left right {
+  '_triko_init'
+  '_triko_left' left
+  '_triko_right' right
+}
+
+to triko_straightFull {
+  triko_go 'forward' 100
+}
+
+to triko_stop {
+  '_triko_init'
+  '_triko_left' 0
+  '_triko_right' 0
+}
+
+to triko_stopWith mode {
+  '_triko_init'
+  if (mode == 'coast') {
+    '_triko_coastAll'
+  } else {
+    triko_stop
+  }
+}
+
+to triko_webJoystick name password {
+  comment 'WiFi hotspot + joystick page at http://192.168.4.1 . Keeps running: put it last in a script.'
+  '_triko_init'
+  triko_stop
+  if (not ('[net:hasWiFi]')) {
+    sayIt 'This board has no WiFi'
+    return 0
+  }
+  if ((size password) < 8) {
+    sayIt 'WiFi password needs 8+ characters'
+    return 0
+  }
+  '[net:startWiFi]' name password true
+  if ('Connected' != ('[net:wifiStatus]')) {
+    sayIt 'Could not create hotspot'
+    return 0
+  }
+  sayIt 'Join WiFi' name 'then open' ('[net:myIPAddress]')
+  _triko_webMoving = false
+  forever {
+    local 'request' ('[net:httpServerGetRequest]')
+    if (and (isType request 'string') ((size request) > 0)) {
+      '_triko_webHandle' request
+    } else {
+      if (and _triko_webMoving ((absoluteValue ((millisOp) - _triko_webTime)) > 1500)) {
+        comment 'Safety stop: phone silent for 1.5 s.'
+        triko_stop
+        _triko_webMoving = false
+      }
+      waitMillis 5
+    }
+  }
+}
