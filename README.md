@@ -79,6 +79,8 @@ How to use it:
 3. Open **http://192.168.4.1** in the phone's browser.
 4. Drag the stick to drive. Let go, or press **STOP**, to brake.
 
+The page also shows the ultrasonic **distance ahead** in centimetres, updated a few times a second. It turns red when something is closer than 15 cm, and shows "nothing in front" when nothing is in range.
+
 If the phone stops talking to Triko for 1.5 seconds (out of range, screen locked), Triko stops by itself. In a class, give every robot its own WiFi name.
 
 ### Setup

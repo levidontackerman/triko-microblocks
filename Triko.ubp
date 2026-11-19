@@ -10,7 +10,7 @@ triko_stop
 
 module Triko Output
 author 'Myndsets'
-version 2 0
+version 2 1
 tags robot motor esp32 tb6612 triko wifi joystick ultrasonic
 choices triko_move forward backward 'turn left' 'turn right' 'spin left' 'spin right'
 choices triko_wheel left right both
@@ -30,7 +30,7 @@ If a wheel turns the wrong way, use "flip wheel direction".
 If Triko drifts, lower the faster wheel with "set wheel balance".
 The four "move ... at full speed" blocks keep moving until a stop block runs.
 
-Web joystick: "start web joystick" makes Triko a WiFi hotspot. Join that WiFi on a phone and open http://192.168.4.1 to get a joystick and a STOP button. The block keeps running, so put it last in a script (for example under "when started"). If the phone stops talking to Triko for 1.5 seconds, Triko stops.
+Web joystick: "start web joystick" makes Triko a WiFi hotspot. Join that WiFi on a phone and open http://192.168.4.1 to get a joystick and a STOP button. The block keeps running, so put it last in a script (for example under "when started"). The page also shows the ultrasonic distance ahead, in red when it is under 15 cm. If the phone stops talking to Triko for 1.5 seconds, Triko stops.
 
 Ultrasonic: "Triko distance (cm)" reports the distance to the nearest thing in front (400 = nothing in range). "obstacle closer than" is true or false, so it fits in "if" and "when" blocks.
 '
@@ -183,19 +183,19 @@ to '_triko_page' {
 }
 
 to '_triko_page1' {
-  return '<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"><title>Triko</title><style>body{margin:0;background:#12151c;color:#fff;font-family:sans-serif;text-align:center;touch-action:none;user-select:none;-webkit-user-select:none}h2{margin:14px 0 2px}#t{color:#9aa7bd}#p{width:260px;height:260px;margin:16px auto;border-radius:50%;background:#232a38;border:3px solid #3d4a63;position:relative}#k{width:96px;height:96px;border-radius:50%;background:#ffb300;position:absolute;left:82px;top:82px}#b{width:240px;padding:22px 0;font-size:30px;font-weight:bold;'
+  return '<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"><title>Triko</title><style>body{margin:0;background:#12151c;color:#fff;font-family:sans-serif;text-align:center;touch-action:none;user-select:none;-webkit-user-select:none}h2{margin:14px 0 2px}#t{color:#9aa7bd}#q{margin-top:12px;color:#9aa7bd;font-size:14px}#d{font-size:40px;font-weight:bold}#p{width:260px;height:260px;margin:12px auto;border-radius:50%;background:#232a38;border:3px solid #3d4a63;position:relative}#k{width:96px;height:96px;border-radius:50%;background:#ffb300;position:absolute;left:82px;'
 }
 
 to '_triko_page2' {
-  return 'color:#fff;background:#e53935;border:0;border-radius:16px}</style></head><body><h2>Triko</h2><div id="t">drag the stick to drive</div><div id="p"><div id="k"></div></div><button id="b">STOP</button><script>var p=document.getElementById("p"),k=document.getElementById("k"),t=document.getElementById("t"),L=0,R=0,sent="",busy=0,down=0,last=0;function put(x,y){k.style.left=(82+x*85)+"px";k.style.top=(82-y*85)+"px"}function mv(e){if(!down)return;var r=p.getBoundingClientRect(),x=(e.clientX-r.left-130)/85,y=(130-e.clientY+r.top)/85,m=Math.sqrt(x*x+y*y);if(m>1){x/=m;y/=m}put(x,y);if(Math.abs(x)<.15)x=0;'
+  return 'top:82px}#b{width:240px;padding:22px 0;font-size:30px;font-weight:bold;color:#fff;background:#e53935;border:0;border-radius:16px}</style></head><body><h2>Triko</h2><div id="t">drag the stick to drive</div><div id="q">distance ahead</div><div id="d">--</div><div id="p"><div id="k"></div></div><button id="b">STOP</button><script>var p=document.getElementById("p"),k=document.getElementById("k"),t=document.getElementById("t"),d=document.getElementById("d"),L=0,R=0,sent="",busy=0,down=0,last=0;function put(x,y){k.style.left=(82+x*85)+"px";k.style.top=(82-y*85)+"px"}function mv(e){if(!down)return;'
 }
 
 to '_triko_page3' {
-  return 'if(Math.abs(y)<.15)y=0;var l=y+x,q=y-x,s=Math.max(1,Math.abs(l),Math.abs(q));L=Math.round(l/s*100);R=Math.round(q/s*100)}function up(){down=0;L=0;R=0;put(0,0)}p.onpointerdown=function(e){down=1;p.setPointerCapture(e.pointerId);mv(e)};p.onpointermove=mv;p.onpointerup=up;p.onpointercancel=up;document.getElementById("b").onclick=function(){up();sent=""};function tick(){var u="/d/"+(L+200)+"/"+(R+200),n=Date.now();if(busy&&n-last<1500)return;if(u==sent&&(n-last<400||!(L||R)))return;busy=1;sent=u;last=n;fetch(u).then(function(){busy=0;t.textContent="connected"},function(){busy=0;sent="";'
+  return 'var r=p.getBoundingClientRect(),x=(e.clientX-r.left-130)/85,y=(130-e.clientY+r.top)/85,m=Math.sqrt(x*x+y*y);if(m>1){x/=m;y/=m}put(x,y);if(Math.abs(x)<.15)x=0;if(Math.abs(y)<.15)y=0;var l=y+x,q=y-x,s=Math.max(1,Math.abs(l),Math.abs(q));L=Math.round(l/s*100);R=Math.round(q/s*100)}function up(){down=0;L=0;R=0;put(0,0)}p.onpointerdown=function(e){down=1;p.setPointerCapture(e.pointerId);mv(e)};p.onpointermove=mv;p.onpointerup=up;p.onpointercancel=up;document.getElementById("b").onclick=function(){up();sent=""};function show(s){var v=parseInt(s);if(isNaN(v))return;d.textContent=v>=400?"nothing in front":v+" cm";'
 }
 
 to '_triko_page4' {
-  return 't.textContent="no link - join the Triko WiFi"})}setInterval(tick,80)</script></body></html>'
+  return 'd.style.color=v<15?"#ff5252":"#fff"}function go(u){busy=1;last=Date.now();fetch(u).then(function(r){t.textContent="connected";return r.text()}).then(function(s){busy=0;show(s)},function(){busy=0;sent="";t.textContent="no link - join the Triko WiFi"})}function tick(){var u="/d/"+(L+200)+"/"+(R+200),n=Date.now();if(busy&&n-last<1500)return;if(u!=sent||(L||R)&&n-last>=400){sent=u;go(u)}else if(!(L||R)&&n-last>=300)go("/s")}setInterval(tick,80)</script></body></html>'
 }
 
 to '_triko_pwmOK' pin {
@@ -247,7 +247,7 @@ to '_triko_webDrive' path {
 }
 
 to '_triko_webHandle' request {
-  comment '/ is the joystick page, /d/... is a drive message.'
+  comment '/ is the page, /d/... drives, /s reads the distance.'
   local 'more' request
   repeatUntil (or (not (isType more 'string')) ((size more) < 800)) {
     more = ('[net:httpServerGetRequest]')
@@ -261,7 +261,9 @@ to '_triko_webHandle' request {
   local 'path' ('[data:copyFromTo]' request (i + 1) (j - 1))
   if (('[data:find]' '/d/' path) == 1) {
     '_triko_webDrive' path
-    '[net:respondToHttpRequest]' '200 OK' 'ok'
+    '[net:respondToHttpRequest]' '200 OK' ('[data:join]' '' (triko_distance))
+  } (path == '/s') {
+    '[net:respondToHttpRequest]' '200 OK' ('[data:join]' '' (triko_distance))
   } (path == '/') {
     '[net:respondToHttpRequest]' '200 OK' ('_triko_page') 'Content-Type: text/html'
   } else {
