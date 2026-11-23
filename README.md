@@ -10,16 +10,16 @@ The link opens MicroBlocks in Chrome or Edge with the Triko blocks already loade
 
 ## Wiring (ESP32, GPIO numbers)
 
-This matches the current Myndsets *Two-Wheel Rover* pin map.
+Left and right are as seen from behind, with the ultrasonic sensor at the front. On Triko the motor on AO1/AO2 sits on the right side, so the library treats channel B as the left wheel and channel A as the right wheel.
 
 | Part | Pin | GPIO |
 |---|---|---|
-| Left motor (A, AO1/AO2) | PWMA | 25 |
-| | AIN1 | 26 |
-| | AIN2 | 27 |
-| Right motor (B, BO1/BO2) | PWMB | 14 |
+| Left motor (channel B, BO1/BO2) | PWMB | 14 |
 | | BIN1 | 18 |
 | | BIN2 | 19 |
+| Right motor (channel A, AO1/AO2) | PWMA | 25 |
+| | AIN1 | 26 |
+| | AIN2 | 27 |
 | Motor driver | STBY | 13 |
 | Ultrasonic (HC-SR04) | TRIG | 22 |
 | | ECHO | 34, through the 1 kΩ / 2 kΩ divider |
@@ -27,7 +27,7 @@ This matches the current Myndsets *Two-Wheel Rover* pin map.
 - **Power:** two 18650 cells in series go to a two-cell charging module, then through the ON/OFF switch to an LM2596 step-down module set to 5.0 volts. That 5 volt rail powers the motor driver (VM), the ESP32 (VIN) and the ultrasonic sensor. All grounds are joined.
 - **STBY** is switched HIGH by the library the first time any Triko block runs. Until then the driver stays asleep and the motors are off.
 - **ECHO** is a 5 volt signal. It must go through the divider before it reaches GPIO 34.
-- MicroBlocks drives GPIO 25 and 26 as DAC outputs, so they can't do PWM. The library handles this for the left motor automatically: it holds PWMA (GPIO 25) HIGH and sends the left speed as PWM on AIN2 (GPIO 27).
+- MicroBlocks drives GPIO 25 and 26 as DAC outputs, so they can't do PWM. The library handles this for the right motor automatically: it holds PWMA (GPIO 25) HIGH and sends the left speed as PWM on AIN2 (GPIO 27).
 
 ## Blocks
 
@@ -80,6 +80,15 @@ How to use it:
 4. Drag the stick to drive. Let go, or press **STOP**, to brake.
 
 The page also shows the ultrasonic **distance ahead** in centimetres, updated a few times a second. It turns red when something is closer than 15 cm, and shows "nothing in front" when nothing is in range.
+
+Under the STOP button there are **left wheel** and **right wheel** sliders (-100 to 100 %) to run each motor on its own, with the speed each wheel is getting shown next to it. Dragging the joystick takes over while you drag; letting go goes back to the slider speeds. **STOP** sets both sliders back to 0.
+
+Below the sliders there are two tick boxes for when a wheel turns the wrong way (TT motors are often wired the opposite way round):
+
+- **invert left motor** swaps the left motor's two direction pins in the code (BIN1 on GPIO 18 and BIN2 on GPIO 19).
+- **invert right motor** swaps the right motor's two direction pins in the code (AIN1 on GPIO 26 and AIN2 on GPIO 27).
+
+Triko stops for a moment when you tick or untick a box. The swap is only in the code, not the wiring, and it resets when Triko restarts.
 
 If the phone stops talking to Triko for 1.5 seconds (out of range, screen locked), Triko stops by itself. In a class, give every robot its own WiFi name.
 

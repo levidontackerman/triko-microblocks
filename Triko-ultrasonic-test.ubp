@@ -19,7 +19,7 @@ forever {
 
 module Triko Output
 author 'Myndsets'
-version 2 1
+version 2 5
 tags robot motor esp32 tb6612 triko wifi joystick ultrasonic
 choices triko_move forward backward 'turn left' 'turn right' 'spin left' 'spin right'
 choices triko_wheel left right both
@@ -27,23 +27,24 @@ choices triko_stopmode brake coast
 description 'Easy blocks for the Myndsets Triko two-wheel rover (ESP32 + TB6612FNG motor driver + HC-SR04 ultrasonic sensor).
 
 Wiring (ESP32 GPIO numbers, Myndsets Two-Wheel Rover pin map):
-LEFT motor (A, AO1/AO2): PWMA 25, AIN1 26, AIN2 27
-RIGHT motor (B, BO1/BO2): PWMB 14, BIN1 18, BIN2 19
+LEFT motor (B, BO1/BO2): PWMB 14, BIN1 18, BIN2 19
+RIGHT motor (A, AO1/AO2): PWMA 25, AIN1 26, AIN2 27
+(On Triko the motor on AO1/AO2 sits on the right side, seen from behind with the sensor at the front.)
 STBY 13 (the library switches it HIGH to turn the driver on)
 Ultrasonic: TRIG 22, ECHO 34 through the 1 k / 2 k divider
 
-GPIO 25 and 26 have no PWM in MicroBlocks (they are DAC pins), so the left speed pin is held HIGH and the left wheel speed is sent on AIN2 (GPIO 27) instead. This is automatic.
+GPIO 25 and 26 have no PWM in MicroBlocks (they are DAC pins), so the right speed pin is held HIGH and the right wheel speed is sent on AIN2 (GPIO 27) instead. This is automatic.
 
 Speed is -100 to 100 %. Positive = forward, negative = backward, 0 = brake.
 If a wheel turns the wrong way, use "flip wheel direction".
 If Triko drifts, lower the faster wheel with "set wheel balance".
 The four "move ... at full speed" blocks keep moving until a stop block runs.
 
-Web joystick: "start web joystick" makes Triko a WiFi hotspot. Join that WiFi on a phone and open http://192.168.4.1 to get a joystick and a STOP button. The block keeps running, so put it last in a script (for example under "when started"). The page also shows the ultrasonic distance ahead, in red when it is under 15 cm. If the phone stops talking to Triko for 1.5 seconds, Triko stops.
+Web joystick: "start web joystick" makes Triko a WiFi hotspot. Join that WiFi on a phone and open http://192.168.4.1 to get a joystick and a STOP button. The block keeps running, so put it last in a script (for example under "when started"). The page also shows the ultrasonic distance ahead, in red when it is under 15 cm. The "left wheel" and "right wheel" sliders run each motor on its own (-100 to 100 %); the joystick takes over while you drag it, and STOP sets both sliders back to 0. If a wheel turns the wrong way, tick "invert left motor" (swaps the BIN1 and BIN2 pins in the code) or "invert right motor" (swaps AIN1 and AIN2) on the page. This resets when Triko restarts. If the phone stops talking to Triko for 1.5 seconds, Triko stops.
 
 Ultrasonic: "Triko distance (cm)" reports the distance to the nearest thing in front (400 = nothing in range). "obstacle closer than" is true or false, so it fits in "if" and "when" blocks.
 '
-variables _triko_ready _triko_pwmL _triko_in1L _triko_in2L _triko_pwmR _triko_in1R _triko_in2R _triko_stby _triko_flipL _triko_flipR _triko_balL _triko_balR _triko_trig _triko_echo _triko_sonarLast _triko_sonarMisses _triko_sonarTime _triko_webMoving _triko_webTime
+variables _triko_ready _triko_pwmL _triko_in1L _triko_in2L _triko_pwmR _triko_in1R _triko_in2R _triko_stby _triko_flipL _triko_flipR _triko_balL _triko_balR _triko_trig _triko_echo _triko_sonarLast _triko_sonarMisses _triko_sonarTime _triko_webMoving _triko_webTime _triko_swapL _triko_swapR
 
   spec ' ' 'triko_goFor' 'move _ at speed _ % for _ ms' 'menu.triko_move num num' 'forward' 50 1000
   spec ' ' 'triko_go' 'move _ at speed _ %' 'menu.triko_move num' 'forward' 50
@@ -66,7 +67,7 @@ variables _triko_ready _triko_pwmL _triko_in1L _triko_in2L _triko_pwmR _triko_in
   space
   spec ' ' 'triko_flipWheel' 'flip _ wheel direction _' 'menu.triko_wheel bool' 'left' true
   space
-  spec ' ' '_triko_setPins' 'set Triko pins left PWM _ IN1 _ IN2 _ right PWM _ IN1 _ IN2 _ standby _' 'num num num num num num num' 25 26 27 14 18 19 13
+  spec ' ' '_triko_setPins' 'set Triko pins left PWM _ IN1 _ IN2 _ right PWM _ IN1 _ IN2 _ standby _' 'num num num num num num num' 14 18 19 25 26 27 13
   spec ' ' '_triko_setSonarPins' 'set ultrasonic pins trig _ echo _' 'num num' 22 34
   spec ' ' '_triko_init' '_triko_init'
   spec ' ' '_triko_wake' '_triko_wake'
@@ -85,6 +86,11 @@ variables _triko_ready _triko_pwmL _triko_in1L _triko_in2L _triko_pwmR _triko_in
   spec 'r' '_triko_page2' '_triko_page2'
   spec 'r' '_triko_page3' '_triko_page3'
   spec 'r' '_triko_page4' '_triko_page4'
+  spec 'r' '_triko_page5' '_triko_page5'
+  spec 'r' '_triko_page6' '_triko_page6'
+  spec 'r' '_triko_page7' '_triko_page7'
+  spec 'r' '_triko_webPath' '_triko_webPath _' 'str' 'GET / HTTP/1.1'
+  spec 'r' '_triko_webFlip' '_triko_webFlip _' 'str' '/f/'
 
 to '_triko_coast' pwm in1 in2 {
   comment 'IN1 = IN2 = LOW: the motor free-wheels.'
@@ -162,12 +168,13 @@ to '_triko_inPin' pin level {
 to '_triko_init' {
   comment 'Default pins from the Myndsets Two-Wheel Rover (ESP32) pin map.'
   if (_triko_ready == 0) {
-    _triko_pwmL = 25
-    _triko_in1L = 26
-    _triko_in2L = 27
-    _triko_pwmR = 14
-    _triko_in1R = 18
-    _triko_in2R = 19
+    comment 'Left wheel = driver channel B, right wheel = channel A (how Triko is wired).'
+    _triko_pwmL = 14
+    _triko_in1L = 18
+    _triko_in2L = 19
+    _triko_pwmR = 25
+    _triko_in1R = 26
+    _triko_in2R = 27
     _triko_stby = 13
     _triko_trig = 22
     _triko_echo = 34
@@ -176,6 +183,8 @@ to '_triko_init' {
     _triko_balL = 100
     _triko_balR = 100
     _triko_sonarLast = 400
+    _triko_swapL = false
+    _triko_swapR = false
     _triko_ready = 1
     '_triko_coastAll'
     '_triko_wake'
@@ -188,23 +197,35 @@ to '_triko_left' speed {
 
 to '_triko_page' {
   comment 'The joystick web page. It is stored in pieces because one MicroBlocks script can only hold about 1000 bytes.'
-  return ('[data:join]' ('[data:join]' ('_triko_page1') ('_triko_page2')) ('[data:join]' ('_triko_page3') ('_triko_page4')))
+  return ('[data:join]' ('[data:join]' ('[data:join]' ('_triko_page1') ('_triko_page2')) ('[data:join]' ('_triko_page3') ('_triko_page4'))) ('[data:join]' ('[data:join]' ('_triko_page5') ('_triko_page6')) ('_triko_page7')))
 }
 
 to '_triko_page1' {
-  return '<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"><title>Triko</title><style>body{margin:0;background:#12151c;color:#fff;font-family:sans-serif;text-align:center;touch-action:none;user-select:none;-webkit-user-select:none}h2{margin:14px 0 2px}#t{color:#9aa7bd}#q{margin-top:12px;color:#9aa7bd;font-size:14px}#d{font-size:40px;font-weight:bold}#p{width:260px;height:260px;margin:12px auto;border-radius:50%;background:#232a38;border:3px solid #3d4a63;position:relative}#k{width:96px;height:96px;border-radius:50%;background:#ffb300;position:absolute;left:82px;'
+  return '<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"><title>Triko</title><style>body{margin:0;background:#12151c;color:#fff;font-family:sans-serif;text-align:center;user-select:none;-webkit-user-select:none}h2{margin:14px 0 2px}#t{color:#9aa7bd}#q{margin-top:12px;color:#9aa7bd;font-size:14px}#d{font-size:40px;font-weight:bold}#p{width:260px;height:260px;margin:12px auto;border-radius:50%;background:#232a38;border:3px solid #3d4a63;position:relative;touch-action:none}#k{width:96px;height:96px;border-radius:50%;background:#ffb300;position:absolute;left:82px;'
 }
 
 to '_triko_page2' {
-  return 'top:82px}#b{width:240px;padding:22px 0;font-size:30px;font-weight:bold;color:#fff;background:#e53935;border:0;border-radius:16px}</style></head><body><h2>Triko</h2><div id="t">drag the stick to drive</div><div id="q">distance ahead</div><div id="d">--</div><div id="p"><div id="k"></div></div><button id="b">STOP</button><script>var p=document.getElementById("p"),k=document.getElementById("k"),t=document.getElementById("t"),d=document.getElementById("d"),L=0,R=0,sent="",busy=0,down=0,last=0;function put(x,y){k.style.left=(82+x*85)+"px";k.style.top=(82-y*85)+"px"}function mv(e){if(!down)return;'
+  return 'top:82px}#b{width:240px;padding:22px 0;font-size:30px;font-weight:bold;color:#fff;background:#e53935;border:0;border-radius:16px}#w{width:260px;margin:18px auto 0;text-align:left}#w .r{display:flex;justify-content:space-between;font-size:18px;color:#cfd6e2;margin-top:10px}#w b{color:#fff}#w input{width:100%;height:32px}#f{margin:18px auto;width:260px;text-align:left}#f label{display:block;padding:10px 0;font-size:20px;color:#cfd6e2}#f input{width:24px;height:24px;vertical-align:middle;margin-right:10px}</style></head><body><h2>Triko</h2><div id="t">drag the stick to drive</div><div id="q">distance ahead</div>'
 }
 
 to '_triko_page3' {
-  return 'var r=p.getBoundingClientRect(),x=(e.clientX-r.left-130)/85,y=(130-e.clientY+r.top)/85,m=Math.sqrt(x*x+y*y);if(m>1){x/=m;y/=m}put(x,y);if(Math.abs(x)<.15)x=0;if(Math.abs(y)<.15)y=0;var l=y+x,q=y-x,s=Math.max(1,Math.abs(l),Math.abs(q));L=Math.round(l/s*100);R=Math.round(q/s*100)}function up(){down=0;L=0;R=0;put(0,0)}p.onpointerdown=function(e){down=1;p.setPointerCapture(e.pointerId);mv(e)};p.onpointermove=mv;p.onpointerup=up;p.onpointercancel=up;document.getElementById("b").onclick=function(){up();sent=""};function show(s){var v=parseInt(s);if(isNaN(v))return;d.textContent=v>=400?"nothing in front":v+" cm";'
+  return '<div id="d">--</div><div id="p"><div id="k"></div></div><button id="b">STOP</button><div id="w"><div class="r"><span>left wheel</span><b id="lv">0 %</b></div><input type="range" id="sl" min="-100" max="100" value="0"><div class="r"><span>right wheel</span><b id="rv">0 %</b></div><input type="range" id="sr" min="-100" max="100" value="0"></div><div id="f"><label><input type="checkbox" id="fl">invert left motor</label><label><input type="checkbox" id="fr">invert right motor</label></div><script>'
 }
 
 to '_triko_page4' {
-  return 'd.style.color=v<15?"#ff5252":"#fff"}function go(u){busy=1;last=Date.now();fetch(u).then(function(r){t.textContent="connected";return r.text()}).then(function(s){busy=0;show(s)},function(){busy=0;sent="";t.textContent="no link - join the Triko WiFi"})}function tick(){var u="/d/"+(L+200)+"/"+(R+200),n=Date.now();if(busy&&n-last<1500)return;if(u!=sent||(L||R)&&n-last>=400){sent=u;go(u)}else if(!(L||R)&&n-last>=300)go("/s")}setInterval(tick,80)</script></body></html>'
+  return 'var p=document.getElementById("p"),k=document.getElementById("k"),t=document.getElementById("t"),d=document.getElementById("d"),fl=document.getElementById("fl"),fr=document.getElementById("fr"),sl=document.getElementById("sl"),sr=document.getElementById("sr"),lv=document.getElementById("lv"),rv=document.getElementById("rv"),L=0,R=0,sent="",busy=0,down=0,last=0;function put(x,y){k.style.left=(82+x*85)+"px";k.style.top=(82-y*85)+"px"}function mv(e){if(!down)return;var r=p.getBoundingClientRect(),x=(e.clientX-r.left-130)/85,y=(130-e.clientY+r.top)/85,m=Math.sqrt(x*x+y*y);if(m>1){x/=m;y/=m}put(x,y);'
+}
+
+to '_triko_page5' {
+  return 'if(Math.abs(x)<.15)x=0;if(Math.abs(y)<.15)y=0;var l=y+x,q=y-x,s=Math.max(1,Math.abs(l),Math.abs(q));L=Math.round(l/s*100);R=Math.round(q/s*100)}function up(){down=0;L=0;R=0;put(0,0)}p.onpointerdown=function(e){down=1;p.setPointerCapture(e.pointerId);mv(e)};p.onpointermove=mv;p.onpointerup=up;p.onpointercancel=up;document.getElementById("b").onclick=function(){up();sl.value=0;sr.value=0;sent=""};function show(s){var v=parseInt(s);if(isNaN(v))return;d.textContent=v>=400?"nothing in front":v+" cm";d.style.color=v<15?"#ff5252":"#fff"}function go(u){busy=1;last=Date.now();'
+}
+
+to '_triko_page6' {
+  return 'fetch(u).then(function(r){t.textContent="connected";return r.text()}).then(function(s){busy=0;show(s)},function(){busy=0;sent="";t.textContent="no link - join the Triko WiFi"})}function tick(){var a=down?L:+sl.value,c=down?R:+sr.value;lv.textContent=a+" %";rv.textContent=c+" %";var u="/d/"+(a+200)+"/"+(c+200),n=Date.now();if(busy&&n-last<1500)return;if(u!=sent||(a||c)&&n-last>=400){sent=u;go(u)}else if(!(a||c)&&n-last>=300)go("/s")}function sf(s){if(s.length==2){fl.checked=s[0]=="1";fr.checked=s[1]=="1"}}function fq(u){fetch(u).then(function(r){return r.text()}).then(sf,function(){})}'
+}
+
+to '_triko_page7' {
+  return 'fl.onchange=fr.onchange=function(){fq("/f/"+(fl.checked?1:0)+(fr.checked?1:0))};fq("/f/");setInterval(tick,80)</script></body></html>'
 }
 
 to '_triko_pwmOK' pin {
@@ -255,29 +276,59 @@ to '_triko_webDrive' path {
   _triko_webTime = (millisOp)
 }
 
+to '_triko_webFlip' path {
+  comment '/f/LR: 1 swaps the two direction pins of that motor, then stops. /f/ only reports it.'
+  '_triko_init'
+  if ((size path) == 5) {
+    local 'tmp' 0
+    local 'l' (('[data:copyFromTo]' path 4 4) == '1')
+    local 'r' (('[data:copyFromTo]' path 5 5) == '1')
+    if (l != _triko_swapL) {
+      tmp = _triko_in1L
+      _triko_in1L = _triko_in2L
+      _triko_in2L = tmp
+      _triko_swapL = l
+    }
+    if (r != _triko_swapR) {
+      tmp = _triko_in1R
+      _triko_in1R = _triko_in2R
+      _triko_in2R = tmp
+      _triko_swapR = r
+    }
+    triko_stop
+  }
+  return ('[data:join]' (ifExpression _triko_swapL '1' '0') (ifExpression _triko_swapR '1' '0'))
+}
+
 to '_triko_webHandle' request {
-  comment '/ is the page, /d/... drives, /s reads the distance.'
+  comment '/ is the page, /d/... drives, /s reads the distance, /f/... swaps motor pins.'
   local 'more' request
   repeatUntil (or (not (isType more 'string')) ((size more) < 800)) {
     more = ('[net:httpServerGetRequest]')
   }
-  local 'i' ('[data:find]' ' ' request)
-  local 'j' ('[data:find]' ' HTTP' request)
-  if (or (i < 1) (j <= (i + 1))) {
-    '[net:respondToHttpRequest]' '400 Bad Request'
-    return 0
-  }
-  local 'path' ('[data:copyFromTo]' request (i + 1) (j - 1))
-  if (('[data:find]' '/d/' path) == 1) {
+  local 'path' ('_triko_webPath' request)
+  if (path == '/') {
+    '[net:respondToHttpRequest]' '200 OK' ('_triko_page') 'Content-Type: text/html'
+  } (('[data:find]' '/d/' path) == 1) {
     '_triko_webDrive' path
     '[net:respondToHttpRequest]' '200 OK' ('[data:join]' '' (triko_distance))
   } (path == '/s') {
     '[net:respondToHttpRequest]' '200 OK' ('[data:join]' '' (triko_distance))
-  } (path == '/') {
-    '[net:respondToHttpRequest]' '200 OK' ('_triko_page') 'Content-Type: text/html'
+  } (('[data:find]' '/f/' path) == 1) {
+    '[net:respondToHttpRequest]' '200 OK' ('_triko_webFlip' path)
   } else {
     '[net:respondToHttpRequest]' '404 Not Found'
   }
+}
+
+to '_triko_webPath' request {
+  comment 'The path part of an HTTP request line, or an empty string.'
+  local 'i' ('[data:find]' ' ' request)
+  local 'j' ('[data:find]' ' HTTP' request)
+  if (or (i < 1) (j <= (i + 1))) {
+    return ''
+  }
+  return ('[data:copyFromTo]' request (i + 1) (j - 1))
 }
 
 to triko_distance {
@@ -374,6 +425,8 @@ to '_triko_setPins' pwmL in1L in2L pwmR in1R in2R stby {
   _triko_in1R = in1R
   _triko_in2R = in2R
   _triko_stby = stby
+  _triko_swapL = false
+  _triko_swapR = false
   '_triko_coastAll'
   '_triko_wake'
 }
