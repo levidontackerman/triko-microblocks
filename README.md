@@ -77,11 +77,11 @@ How to use it:
 1. Put the block under **when started** (it keeps running, so it goes last in the script).
 2. On a phone, join the WiFi name you chose. The password needs 8 or more characters.
 3. Open **http://192.168.4.1** in the phone's browser.
-4. Drag the stick to drive. Let go, or press **STOP**, to brake.
+4. Set the two wheel speed sliders, then drag the stick to drive. Let go, or press **STOP**, to brake.
 
 The page also shows the ultrasonic **distance ahead** in centimetres, updated a few times a second. It turns red when something is closer than 15 cm, and shows "nothing in front" when nothing is in range.
 
-Under the STOP button there are **left wheel** and **right wheel** sliders (-100 to 100 %) to run each motor on its own, with the speed each wheel is getting shown next to it. Dragging the joystick takes over while you drag; letting go goes back to the slider speeds. **STOP** sets both sliders back to 0.
+Under the STOP button there are **left wheel speed** and **right wheel speed** sliders (0 to 100 %). They set how fast each wheel goes when you drive with the joystick, so you can tune each motor on its own. The sliders don't move Triko by themselves, and the joystick does nothing while both are at 0 (the page says "set the wheel speeds first"). **STOP** stops the wheels but keeps the speeds you set.
 
 Below the sliders there are two tick boxes for when a wheel turns the wrong way (TT motors are often wired the opposite way round):
 
