@@ -88,7 +88,9 @@ Below the sliders there are two tick boxes for when a wheel turns the wrong way 
 - **invert left motor** swaps the left motor's two direction pins in the code (BIN1 on GPIO 18 and BIN2 on GPIO 19).
 - **invert right motor** swaps the right motor's two direction pins in the code (AIN1 on GPIO 26 and AIN2 on GPIO 27).
 
-Triko stops for a moment when you tick or untick a box. The swap is only in the code, not the wiring, and it resets when Triko restarts.
+- **swap left and right** is for when the joystick turns Triko the wrong way (stick left makes Triko turn right). It sends the left wheel's speed to the other motor and the right wheel's speed to the first one, so the joystick and the two speed sliders match the real wheels. With it ticked, the invert boxes still mean the wheel on that side.
+
+Triko stops for a moment when you tick or untick a box. These swaps are only in the code, not the wiring, and they reset when Triko restarts.
 
 If the phone stops talking to Triko for 1.5 seconds (out of range, screen locked), Triko stops by itself. In a class, give every robot its own WiFi name.
 

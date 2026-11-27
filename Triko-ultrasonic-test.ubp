@@ -19,7 +19,7 @@ forever {
 
 module Triko Output
 author 'Myndsets'
-version 2 6
+version 2 7
 tags robot motor esp32 tb6612 triko wifi joystick ultrasonic
 choices triko_move forward backward 'turn left' 'turn right' 'spin left' 'spin right'
 choices triko_wheel left right both
@@ -40,11 +40,11 @@ If a wheel turns the wrong way, use "flip wheel direction".
 If Triko drifts, lower the faster wheel with "set wheel balance".
 The four "move ... at full speed" blocks keep moving until a stop block runs.
 
-Web joystick: "start web joystick" makes Triko a WiFi hotspot. Join that WiFi on a phone and open http://192.168.4.1 to get a joystick and a STOP button. The block keeps running, so put it last in a script (for example under "when started"). The page also shows the ultrasonic distance ahead, in red when it is under 15 cm. The "left wheel speed" and "right wheel speed" sliders (0 to 100 %) set how fast each wheel goes when you drive with the joystick. They do not move Triko by themselves, and the joystick does nothing while both are at 0. STOP stops the wheels but keeps the speeds you set. If a wheel turns the wrong way, tick "invert left motor" (swaps the BIN1 and BIN2 pins in the code) or "invert right motor" (swaps AIN1 and AIN2) on the page. This resets when Triko restarts. If the phone stops talking to Triko for 1.5 seconds, Triko stops.
+Web joystick: "start web joystick" makes Triko a WiFi hotspot. Join that WiFi on a phone and open http://192.168.4.1 to get a joystick and a STOP button. The block keeps running, so put it last in a script (for example under "when started"). The page also shows the ultrasonic distance ahead, in red when it is under 15 cm. The "left wheel speed" and "right wheel speed" sliders (0 to 100 %) set how fast each wheel goes when you drive with the joystick. They do not move Triko by themselves, and the joystick does nothing while both are at 0. STOP stops the wheels but keeps the speeds you set. If a wheel turns the wrong way, tick "invert left motor" (swaps the BIN1 and BIN2 pins in the code) or "invert right motor" (swaps AIN1 and AIN2) on the page. If the joystick turns Triko the wrong way (left goes right), tick "swap left and right". The invert boxes always mean the wheel on that side. These reset when Triko restarts. If the phone stops talking to Triko for 1.5 seconds, Triko stops.
 
 Ultrasonic: "Triko distance (cm)" reports the distance to the nearest thing in front (400 = nothing in range). "obstacle closer than" is true or false, so it fits in "if" and "when" blocks.
 '
-variables _triko_ready _triko_pwmL _triko_in1L _triko_in2L _triko_pwmR _triko_in1R _triko_in2R _triko_stby _triko_flipL _triko_flipR _triko_balL _triko_balR _triko_trig _triko_echo _triko_sonarLast _triko_sonarMisses _triko_sonarTime _triko_webMoving _triko_webTime _triko_swapL _triko_swapR
+variables _triko_ready _triko_pwmL _triko_in1L _triko_in2L _triko_pwmR _triko_in1R _triko_in2R _triko_stby _triko_flipL _triko_flipR _triko_balL _triko_balR _triko_trig _triko_echo _triko_sonarLast _triko_sonarMisses _triko_sonarTime _triko_webMoving _triko_webTime _triko_swapL _triko_swapR _triko_swapLR
 
   spec ' ' 'triko_goFor' 'move _ at speed _ % for _ ms' 'menu.triko_move num num' 'forward' 50 1000
   spec ' ' 'triko_go' 'move _ at speed _ %' 'menu.triko_move num' 'forward' 50
@@ -185,6 +185,7 @@ to '_triko_init' {
     _triko_sonarLast = 400
     _triko_swapL = false
     _triko_swapR = false
+    _triko_swapLR = false
     _triko_ready = 1
     '_triko_coastAll'
     '_triko_wake'
@@ -209,11 +210,11 @@ to '_triko_page2' {
 }
 
 to '_triko_page3' {
-  return '<div id="d">--</div><div id="p"><div id="k"></div></div><button id="b">STOP</button><div id="w"><div class="r"><span>left wheel speed</span><b id="lv">0 %</b></div><input type="range" id="sl" min="0" max="100" value="0"><div class="r"><span>right wheel speed</span><b id="rv">0 %</b></div><input type="range" id="sr" min="0" max="100" value="0"></div><div id="f"><label><input type="checkbox" id="fl">invert left motor</label><label><input type="checkbox" id="fr">invert right motor</label></div><script>'
+  return '<div id="d">--</div><div id="p"><div id="k"></div></div><button id="b">STOP</button><div id="w"><div class="r"><span>left wheel speed</span><b id="lv">0 %</b></div><input type="range" id="sl" min="0" max="100" value="0"><div class="r"><span>right wheel speed</span><b id="rv">0 %</b></div><input type="range" id="sr" min="0" max="100" value="0"></div><div id="f"><label><input type="checkbox" id="fl">invert left motor</label><label><input type="checkbox" id="fr">invert right motor</label><label><input type="checkbox" id="fs">swap left and right</label></div><script>'
 }
 
 to '_triko_page4' {
-  return 'var p=document.getElementById("p"),k=document.getElementById("k"),t=document.getElementById("t"),d=document.getElementById("d"),fl=document.getElementById("fl"),fr=document.getElementById("fr"),sl=document.getElementById("sl"),sr=document.getElementById("sr"),lv=document.getElementById("lv"),rv=document.getElementById("rv"),L=0,R=0,h="",sent="",busy=0,down=0,last=0;function put(x,y){k.style.left=(82+x*85)+"px";k.style.top=(82-y*85)+"px"}function mv(e){if(!down)return;var r=p.getBoundingClientRect(),x=(e.clientX-r.left-130)/85,y=(130-e.clientY+r.top)/85,m=Math.sqrt(x*x+y*y);if(m>1){x/=m;y/=m}put(x,y);'
+  return 'var p=document.getElementById("p"),k=document.getElementById("k"),t=document.getElementById("t"),d=document.getElementById("d"),fl=document.getElementById("fl"),fr=document.getElementById("fr"),fs=document.getElementById("fs"),F="00",S=0,sl=document.getElementById("sl"),sr=document.getElementById("sr"),lv=document.getElementById("lv"),rv=document.getElementById("rv"),L=0,R=0,h="",sent="",busy=0,down=0,last=0;function put(x,y){k.style.left=(82+x*85)+"px";k.style.top=(82-y*85)+"px"}function mv(e){if(!down)return;var r=p.getBoundingClientRect(),x=(e.clientX-r.left-130)/85,y=(130-e.clientY+r.top)/85,m=Math.sqrt(x*x+y*y);if(m>1){x/=m;y/=m}put(x,y);'
 }
 
 to '_triko_page5' {
@@ -225,7 +226,7 @@ to '_triko_page6' {
 }
 
 to '_triko_page7' {
-  return 'function sf(s){if(s.length==2){fl.checked=s[0]=="1";fr.checked=s[1]=="1"}}function fq(u){fetch(u).then(function(r){return r.text()}).then(sf,function(){})}fl.onchange=fr.onchange=function(){fq("/f/"+(fl.checked?1:0)+(fr.checked?1:0))};fq("/f/");setInterval(tick,80)</script></body></html>'
+  return 'function sf(s){if(s.length==3){F=s.slice(0,2);S=s[2]=="1";fs.checked=S;fl.checked=F[S?1:0]=="1";fr.checked=F[S?0:1]=="1"}}function nb(c){return c.checked?1:0}function fq(u){fetch(u).then(function(r){return r.text()}).then(sf,function(){})}fl.onchange=fr.onchange=function(){fq("/f/"+(S?nb(fr)+""+nb(fl):nb(fl)+""+nb(fr))+(S?1:0))};fs.onchange=function(){fq("/f/"+F+nb(fs))};fq("/f/");setInterval(tick,80)</script></body></html>'
 }
 
 to '_triko_pwmOK' pin {
@@ -270,16 +271,22 @@ to '_triko_webDrive' path {
   if (or (or (left < 100) (left > 300)) (or (right < 100) (right > 300))) {
     return 0
   }
-  '_triko_left' (left - 200)
-  '_triko_right' (right - 200)
+  if (_triko_swapLR == true) {
+    comment 'swap left and right is ticked: the left speed goes to the other motor.'
+    '_triko_left' (right - 200)
+    '_triko_right' (left - 200)
+  } else {
+    '_triko_left' (left - 200)
+    '_triko_right' (right - 200)
+  }
   _triko_webMoving = (or (left != 200) (right != 200))
   _triko_webTime = (millisOp)
 }
 
 to '_triko_webFlip' path {
-  comment '/f/LR: 1 swaps the two direction pins of that motor, then stops. /f/ only reports it.'
+  comment '/f/LRS: L or R = 1 swaps the two direction pins of that motor, S = 1 swaps the left and right motors for the joystick, then stops. /f/ only reports it.'
   '_triko_init'
-  if ((size path) == 5) {
+  if ((size path) == 6) {
     local 'tmp' 0
     local 'l' (('[data:copyFromTo]' path 4 4) == '1')
     local 'r' (('[data:copyFromTo]' path 5 5) == '1')
@@ -295,9 +302,10 @@ to '_triko_webFlip' path {
       _triko_in2R = tmp
       _triko_swapR = r
     }
+    _triko_swapLR = (('[data:copyFromTo]' path 6 6) == '1')
     triko_stop
   }
-  return ('[data:join]' (ifExpression _triko_swapL '1' '0') (ifExpression _triko_swapR '1' '0'))
+  return ('[data:join]' (ifExpression _triko_swapL '1' '0') (ifExpression _triko_swapR '1' '0') (ifExpression _triko_swapLR '1' '0'))
 }
 
 to '_triko_webHandle' request {
@@ -427,6 +435,7 @@ to '_triko_setPins' pwmL in1L in2L pwmR in1R in2R stby {
   _triko_stby = stby
   _triko_swapL = false
   _triko_swapR = false
+  _triko_swapLR = false
   '_triko_coastAll'
   '_triko_wake'
 }
